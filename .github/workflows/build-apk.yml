@@ -16,13 +16,29 @@ jobs:
 
       - name: Extract project
         run: |
-          mkdir extracted
+          mkdir -p extracted
           unzip -q game-turbo.zip -d extracted
-          find extracted -name gradlew -type f
+
+          echo "=== Extracted files ==="
+          find extracted -maxdepth 4 -type f | head -100
 
       - name: Find Android project
         run: |
-          PROJECT_DIR=$(find extracted -name gradlew -type f -print -quit | xargs dirname)
+          GRADLEW_PATH=$(find extracted -type f -name gradlew -print -quit)
+
+          if [ -z "$GRADLEW_PATH" ]; then
+            echo "ERROR: gradlew was not found in the extracted project."
+            echo "The ZIP may not contain a complete Android project."
+            echo "=== Files found in ZIP ==="
+            find extracted -maxdepth 5 -type f
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$GRADLEW_PATH")
+
+          echo "Android project found at:"
+          echo "$PROJECT_DIR"
+
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Setup Java
@@ -31,21 +47,30 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make Gradle executable
+        run: |
+          chmod +x "$PROJECT_DIR/gradlew"
 
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
+
+      - name: Find APK
+        run: |
+          echo "=== APK files ==="
+          find "$PROJECT_DIR" -type f -name "*.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Game-Turbo-APK
-          path: '**/build/outputs/apk/**/*.apk'
+          path: |
+            ${{ env.PROJECT_DIR }}/**/build/outputs/apk/**/*.apk
           if-no-files-found: error
